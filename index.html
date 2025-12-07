@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Flappy Arkadaşlar</title>
+    <style>
+        body { margin: 0; padding: 0; background: #70c5ce; overflow: hidden; font-family: Arial, sans-serif; }
+        canvas { display: block; margin: 0 auto; background: #70c5ce; }
+        
+        /* Giriş ve Seçim Ekranı Tasarımı */
+        #menu {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 10;
+        }
+        h1 { color: white; margin-bottom: 20px; font-size: 24px; text-align: center; }
+        .karakter-container {
+            display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; max-width: 90%;
+        }
+        .karakter-kutu {
+            background: white; border-radius: 10px; padding: 10px;
+            text-align: center; cursor: pointer; width: 80px;
+            transition: transform 0.1s;
+        }
+        .karakter-kutu:active { transform: scale(0.95); }
+        .karakter-kutu img { width: 50px; height: 50px; object-fit: contain; margin-bottom: 5px; }
+        .karakter-isim { font-weight: bold; font-size: 14px; color: #333; }
+        
+        /* Oyun Bitti Ekranı */
+        #gameover {
+            display: none; position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: white; padding: 20px; border-radius: 10px; text-align: center;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5); z-index: 20;
+        }
+        button {
+            background: #ff5722; color: white; border: none; padding: 10px 20px;
+            font-size: 16px; border-radius: 5px; cursor: pointer; margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="menu">
+        <h1>Karakterini Seç</h1>
+        <div class="karakter-container" id="karakterListesi">
+            </div>
+    </div>
+
+    <div id="gameover">
+        <h2>Oyun Bitti!</h2>
+        <p>Skorun: <span id="skorText">0</span></p>
+        <button onclick="location.reload()">Tekrar Oyna / Karakter Seç</button>
+    </div>
+
+    <canvas id="oyunCanvas"></canvas>
+
+<script>
+    const karakterler = [
+        { isim: "Bozkurt İlkay", resim: "bozkurtilkay.png" },  
+        { isim: "Alperen",  resim: "alperen.jpeg" },   
+        { isim: "Küçük Emir", resim: "kucukemir.jpeg" }, 
+        { isim: "Metin", resim: "cibilmetin.jpeg" },
+        { isim: "Saçlı Emo", resim: "uzunsacliemo.jpeg" },
+        { isim: "Bruhan Bey", resim: "bruhantakim.jpeg" },
+        { isim: "Triceps Furkan",   resim: "tricepsfurkan.jpeg" } 
+    ];
+
+    const cvs = document.getElementById("oyunCanvas");
+    const ctx = cvs.getContext("2d");
+
+    // Ekran boyutunu ayarla
+    cvs.width = window.innerWidth > 480 ? 400 : window.innerWidth; 
+    cvs.height = window.innerHeight;
+
+    // Değişkenler
+    let secilenKarakterImg = new Image();
+    let oyunBasladi = false;
+    let frames = 0;
+    let skor = 0;
+
+    // Karakter Listesini Oluştur
+    const listeDiv = document.getElementById("karakterListesi");
+    
+    karakterler.forEach((k, index) => {
+        let kutu = document.createElement("div");
+        kutu.className = "karakter-kutu";
+        
+        let imgTag = document.createElement("img");
+        imgTag.src = k.resim;
+        
+        imgTag.onerror = function() { this.src = "https://via.placeholder.com/50?text=" + k.isim[0]; };
+
+        let isimTag = document.createElement("div");
+        isimTag.className = "karakter-isim";
+        isimTag.innerText = k.isim;
+
+        kutu.appendChild(imgTag);
+        kutu.appendChild(isimTag);
+        
+        kutu.onclick = () => { oyunuBaslat(k.resim); };
+        
+        listeDiv.appendChild(kutu);
+    });
+
+    function oyunuBaslat(resimYolu) {
+        secilenKarakterImg.src = resimYolu;
+        document.getElementById("menu").style.display = "none";
+        oyunBasladi = true;
+        loop();
+    }
+
+    const kus = {
+        x: 50, y: 150, w: 40, h: 40, gravity: 0.25, jump: 4.6, speed: 0,
+        ciz: function() {
+            ctx.drawImage(secilenKarakterImg, this.x, this.y, this.w, this.h);
+        },
+        guncelle: function() {
+            this.speed += this.gravity;
+            this.y += this.speed;
+            
+            if(this.y + this.h >= cvs.height - 20) {
+                oyunBitti();
+            }
+        },
+        zipla: function() {
+            this.speed = -this.jump;
+        }
+    };
+
+    const borular = {
+        konum: [], w: 50, dx: 2, gap: 130, // gap: İki boru arasındaki boşluk miktarı (130px)
+        
+        ciz: function() {
+            for(let i=0; i<this.konum.length; i++){
+                let p = this.konum[i];
+                let topY = p.y; // Üst borunun bittiği yer (Yüksekliği)
+                
+                ctx.fillStyle = "#2e7d32";
+                
+                // Üst Boruyu Çiz
+                ctx.fillRect(p.x, 0, this.w, topY); 
+                
+                // Alt Boruyu Çiz (Üst boru + boşluk kadar aşağıdan başla)
+                let altBoruBaslangic = topY + this.gap;
+                ctx.fillRect(p.x, altBoruBaslangic, this.w, cvs.height - altBoruBaslangic); 
+            }
+        },
+        guncelle: function() {
+            // Boru üretme sıklığı
+            if(frames % 120 == 0) { 
+                // Rastgele bir yükseklik belirle (En az 50px, en fazla ekran - 300px)
+                // Bu sayede alt boruya da yer kalır.
+                let maxTopY = cvs.height - 250; 
+                let randomY = Math.floor(Math.random() * (maxTopY - 50)) + 50;
+                this.konum.push({ x: cvs.width, y: randomY });
+            }
+            
+            for(let i=0; i<this.konum.length; i++){
+                let p = this.konum[i];
+                p.x -= this.dx;
+
+                // Çarpışma Kontrolü
+                let kusSol = kus.x;
+                let kusSag = kus.x + kus.w;
+                let kusUst = kus.y;
+                let kusAlt = kus.y + kus.h;
+
+                let boruSol = p.x;
+                let boruSag = p.x + this.w;
+                
+                let ustBoruAltSinir = p.y;
+                let altBoruUstSinir = p.y + this.gap;
+
+                // Boruya çarpma mantığı
+                // Eğer kuş borunun hizasındaysa...
+                if(kusSag > boruSol && kusSol < boruSag) {
+                    // ...ve kuş üst boruya çarpıyorsa VEYA alt boruya çarpıyorsa
+                    if(kusUst < ustBoruAltSinir || kusAlt > altBoruUstSinir){
+                        oyunBitti();
+                    }
+                }
+
+                // Skoru artır ve ekran dışına çıkan boruyu sil
+                if(p.x + this.w <= 0) {
+                    this.konum.shift();
+                    skor++;
+                }
+            }
+        },
+        reset: function() { this.konum = []; this.dx = 2; }
+    };
+
+    function arkaplanCiz() {
+        ctx.fillStyle = "#70c5ce";
+        ctx.fillRect(0, 0, cvs.width, cvs.height);
+        ctx.fillStyle = "#ded895";
+        ctx.fillRect(0, cvs.height - 20, cvs.width, 20); // Zemin
+    }
+    
+    function skorCiz() {
+        ctx.fillStyle = "#FFF";
+        ctx.strokeStyle = "#000";
+        ctx.lineWidth = 2;
+        ctx.font = "35px Arial";
+        ctx.fillText(skor, cvs.width/2 - 10, 50);
+        ctx.strokeText(skor, cvs.width/2 - 10, 50);
+    }
+
+    function oyunBitti() {
+        oyunBasladi = false;
+        document.getElementById("gameover").style.display = "block";
+        document.getElementById("skorText").innerText = skor;
+    }
+
+    function loop() {
+        if(!oyunBasladi) return;
+        arkaplanCiz();
+        borular.ciz();
+        borular.guncelle();
+        kus.ciz();
+        kus.guncelle();
+        skorCiz();
+        frames++;
+        requestAnimationFrame(loop);
+    }
+
+    window.addEventListener("click", () => { if(oyunBasladi) kus.zipla(); });
+    window.addEventListener("touchstart", (e) => { 
+        if(oyunBasladi) { 
+            e.preventDefault(); 
+            kus.zipla(); 
+        } 
+    }, {passive: false});
+
+</script>
+</body>
+</html>
